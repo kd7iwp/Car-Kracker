@@ -6,6 +6,9 @@
 
 {{
 Revision History:
+0.53:           Added Datalog mode, Serial Sniffer Mode
+                Version check / report
+
 0.51:           Preferences are now stored on EEPROM for reboots
                 They can be changed through a serial connection
 
@@ -26,7 +29,8 @@ OBJ
   debug        : "Parallax Serial Terminal" 
   Buttons      : "Touch Buttons"
   music        : "music_manager"
-  i2cObject    : "i2cObject.spin"       
+  i2cObject    : "i2cObject.spin"
+      SD  : "FSRW"           
     
 VAR
 LONG incomingcode
@@ -37,13 +41,18 @@ BYTE ButtonReader
 'Variables for Config Mode
 BYTE configbuffer[20]
 BYTE controltype[20]
-BYTE getorset[5]  
+BYTE getorset[5]
+BYTE bussendvalue[20]
+
+BYTE senderlookup[3]
+BYTE logfilename[10]      
+LONG speed, rpm, intemp, outtemp  
 
 PUB main | i 
 i2cObject.Init(29, 28, false)
 incomingcode := Kbus.Start(27, 26)
 ButtonReader := Buttons.start(clkfreq / 100)
-debug.Start(115_200)
+debug.Start(9600)
 setled(1)
 
 i := cnt + menudelay
@@ -52,6 +61,7 @@ repeat while cnt < i
     configmode
 
 setled(0)
+
 repeat
   i := cnt + (menudelay)
   IF EEPROM_read(112) <> 1
@@ -67,31 +77,234 @@ repeat
     1 : MusicMode
     2 : SerialRepeatMode
     3 : RemapperMode
+    4 : DataLogMode
     OTHER : DiagnosticMode
 
 
 PUB configmode  | controlSelected, eepromoffset
 setled(2)
-debug.str(string("Connected"))
+debug.str(string("Version"))
+debug.newline      
+debug.str(string("0.53"))
 debug.newline
 
 repeat while debug.rxcount > 0
   debug.rxflush
 
 repeat
-   debug.strin(@configbuffer)
-  IF strcomp(@configbuffer, @combobox) 
-    eepromoffset := 100 + debug.decin 
-    debug.strin(@getorset)
-    IF strcomp(@getorset, @set)
-      EEPROM_set(eepromoffset,debug.decin)
-    ELSE 
-      sendsetting(eepromoffset,1) 
+  debug.strin(@configbuffer)
 
   IF strcomp(@configbuffer, @testcmd)
     configblast(debug.decin)
     debug.strin(@getorset) 
     debug.strin(@configbuffer)
+    next
+                                
+  IF strcomp(@configbuffer, @sermon)
+    serialmonitormode
+    next
+    
+  IF strcomp(@configbuffer, @combobox) 
+    eepromoffset := 100 + debug.decin
+    getseteeprom(eepromoffset) 
+  IF strcomp(@configbuffer, @checkbox) 
+    eepromoffset := 200 + debug.decin
+    getseteeprom(eepromoffset)
+
+
+
+PRI getseteeprom(eepromoffset)
+
+debug.strin(@getorset)
+  IF strcomp(@getorset, @set)
+    EEPROM_set(eepromoffset,debug.decin)
+  ELSE 
+    sendsetting(eepromoffset,1) 
+      
+
+
+PUB datalogmode     | i,repeattimer, interval, repeatlimit
+i := EEPROM_read(199)
+repeattimer := 0
+EEPROM_set(199, i + 1)
+bytefill(@logfilename, 0, 10)
+
+debug.str(string("Datalog mode"))
+debug.newline
+
+debug.str(string("Prefix"))
+debug.dec(i)
+debug.newline
+
+i:= \sd.mount_explicit(0, 1, 2, 3)
+
+decimaltostring(EEPROM_read(199), @logfilename)
+debug.str(string("dectostring"))
+debug.str(@logfilename)
+debug.newline
+
+bytemove(@logfilename+strsize(@logfilename), @logfilesuffix, 5)
+ 
+debug.str(string("Filename "))
+debug.str(@logfilename)
+debug.newline
+
+Case EEPROM_Read(119)
+  0: repeatlimit := 1
+  1: repeatlimit := 2
+  2: repeatlimit := 10
+  3: repeatlimit := 120
+
+debug.str(string("repeat: "))
+debug.dec(repeatlimit)
+debug.newline
+  
+
+BYTEfill(@configbuffer,0,20)
+
+'interval := cnt + 2_400_000_000 '30 sec
+interval := cnt + 400_000_000 '5 sec
+
+repeat
+  IF kbus.checkforcode(50) > -1
+    if kbus.speed > -1
+      speed := kbus.speed
+    if kbus.rpms > -1
+      rpm := kbus.rpms
+    if kbus.cooltemp > -1
+      intemp := kbus.cooltemp
+    if kbus.outtemp > -1
+      outtemp := kbus.outtemp
+      
+  IF cnt > interval
+    repeattimer++
+    If  repeattimer == repeatlimit
+      debug.str(string("writing"))
+      writetolog
+      repeattimer := 0
+'    interval := cnt +2_400_000_000 '30 sec
+    interval := cnt + 400_000_000 '5 sec 
+    debug.str(string("reset"))  
+
+PRI writetolog  
+setled(99)
+
+BYTEfill(@configbuffer,0,20)
+
+sd.popen(@logfilename, "a")
+
+IF EEPROM_Read(202) == 0   ' time
+  kbus.localtime(@configbuffer)
+  sd.pputs(@configbuffer) 
+  sd.pputc(",")
+
+IF EEPROM_Read(201) == 0   ' speed
+  decimaltostring(speed, @configbuffer)  
+  sd.pputs(@configbuffer) 
+  sd.pputc(",")
+
+IF EEPROM_Read(204) == 0   ' RPM
+  decimaltostring(rpm, @configbuffer)  
+  sd.pputs(@configbuffer) 
+  sd.pputc(",")
+
+IF EEPROM_Read(206) == 0   ' GPS
+   sd.pputc("x")
+   sd.pputc(",")
+   
+IF EEPROM_Read(207) == 0   ' outside temp
+  decimaltostring(outtemp, @configbuffer)  
+  sd.pputs(@configbuffer) 
+  sd.pputc(",")
+
+IF EEPROM_Read(208) == 0   ' inside temp
+  decimaltostring(intemp, @configbuffer)  
+  sd.pputs(@configbuffer) 
+  sd.pputc(",")
+
+sd.pputc("0")
+sd.pputc(13)
+sd.pputc(10)
+sd.pclose
+
+setled(0)
+  
+
+pri lookupmember(selected) : value   | lookupval
+
+lookupval := BYTE[incomingcode + selected]
+
+case lookupval
+  0 :   value :=   @sndBcast  
+  $18 : value :=   @sndcdw    
+  $3B : value :=   @sndnav    
+  $43 : value :=   @sndmenu   
+  $50 : value :=   @sndmfl    
+  $60 : value :=   @sndpdc    
+  $68 : value :=   @sndrad    
+  $6A : value :=   @snddsp    
+  $80 : value :=   @sndike
+  $BB : value :=   @sndtv     
+  $BF : value :=   @sndlcm    
+  $C0 : value :=   @sndMID    
+  $C8 : value :=   @sndtel    
+  $D0 : value :=   @sndnavbar 
+  $E7 : value :=   @sndobctxt 
+  $ED : value :=   @sndseats  
+  $FF : value :=   @sndBcast
+  OTHER : value :=  @sndNA
+return value 
+
+
+
+PUB serialmonitormode | i, stopflag
+i := 0
+stopflag := 0
+
+
+repeat
+  IF kbus.checkforcode(50) > -1
+    repeat i from 0 to BYTE[incomingcode + 1]
+      debug.hex(BYTE[incomingcode + i],2)
+      debug.char(32)
+    debug.newline
+    debug.str(lookupmember(0))
+    debug.newline             
+    debug.str(lookupmember(2))
+    debug.newline    
+   
+  IF debug.rxcount > 0
+    debug.strin(@configbuffer)
+
+    IF strcomp(@configbuffer, @seroff)
+      return
+    IF strcomp(@configbuffer, @sersend)
+      bytefill(@bussendvalue, 0, 20)
+      stopflag := 0
+      i := 0 
+
+      repeat while stopflag == 0
+        debug.strin(@configbuffer)
+        IF strcomp(@configbuffer, @serdone)     
+          bussendvalue[1] := i -1
+          codetostring(@bussendvalue)
+          kbus.sendcode(@bussendvalue)
+          stopflag := 1    
+        ELSE
+          bussendvalue[i] := debug.hexin
+          i++
+
+
+PRI codetostring(strptr) | i
+
+      repeat i from 0 to BYTE[strptr + 1]
+        debug.hex(BYTE[strptr + i],2)
+        debug.char(32)
+      debug.newline
+      debug.str(@sndNA)
+      debug.newline        
+      debug.str(@sndNA)
+      debug.newline    
     
 PUB configblast(cmd)
  case cmd
@@ -108,32 +321,33 @@ PUB configblast(cmd)
    10 : kbus.sendcode(@DFwindOpen)                    
    11 : kbus.sendcode(@DFwindClose)                   
    12 : kbus.sendcode(@PFwindOpen)                    
-   13 : kbus.sendcode(@PFwindClose)                   
-   14 : kbus.sendcode(@SRoofClose)                    
-   15 : kbus.sendcode(@SRoofOpen)                     
-   16 : kbus.sendcode(@DMirrorFold)                   
-   17 : kbus.sendcode(@DMirrorOut)                    
-   18 : kbus.sendcode(@PMirrorFold)                   
-   19 : kbus.sendcode(@PMirrorOut)                    
-   20 : kbus.sendcode(@ClownNose)                     
-   21 : kbus.sendcode(@Wrnblnk)                       
-   22 : kbus.sendcode(@Wrnblnk3sec)                   
-   23 : kbus.sendcode(@ParkLeft)                      
+   13 : kbus.sendcode(@PFwindClose)                                 
+   14 : kbus.sendcode(@SRoofClose)                                  
+   15 : kbus.sendcode(@SRoofOpen)                                   
+   16 : kbus.sendcode(@DMirrorFold)                                 
+   17 : kbus.sendcode(@DMirrorOut)                                  
+   18 : kbus.sendcode(@PMirrorFold)                                 
+   19 : kbus.sendcode(@PMirrorOut)                                  
+   20 : kbus.sendcode(@ClownNose)                                   
+   21 : kbus.sendcode(@Wrnblnk)                                     
+   22 : kbus.sendcode(@Wrnblnk3sec)                                 
+   23 : kbus.sendcode(@ParkLeft)                                                               
    24 : kbus.sendcode(@ParkRight)                     
    25 : kbus.sendcode(@StopLeft)                      
    26 : kbus.sendcode(@StopRight)                     
    27 : kbus.sendcode(@InteriorOut)                   
-   28 : kbus.sendcode(@FogLights)                     
-   29 : kbus.sendcode(@HazzAndInt)                    
-   30 : kbus.sendcode(@remoteHome)                    
-   31 : kbus.sendcode(@remoteLock)                    
-   32 : kbus.sendcode(@KeyInsert)                     
-   33 : kbus.sendcode(@KeyRemove)                     
-   34 : kbus.sendcode(@Lock3)
-   35 : kbus.sendcode(@LockDriver)
-   36 : kbus.sendcode(@TrunkOpen)
-   37 : kbus.sendcode(@Wiper)
-   38 : kbus.sendcode(@WiperFluid)
+   28 : kbus.sendcode(@FogLightsON)                     
+   29 : kbus.sendcode(@FogLightsOFF)                   
+   30 : kbus.sendcode(@HazzAndInt)                   
+   31 : kbus.sendcode(@remoteHome)                   
+   32 : kbus.sendcode(@remoteLock)                   
+   33 : kbus.sendcode(@KeyInsert)                    
+   34 : kbus.sendcode(@KeyRemove)  
+   35 : kbus.sendcode(@Lock3)      
+   36 : kbus.sendcode(@LockDriver) 
+   37 : kbus.sendcode(@TrunkOpen)  
+   38 : kbus.sendcode(@Wiper)      
+   39 : kbus.sendcode(@WiperFluid) 
 
 PRI EEPROM_set(addr,byteval)
 waitcnt(cnt + 100_000)
@@ -155,6 +369,7 @@ ELSE
 debug.newline   
 
 PUB connectionTestMode
+
 setLED(20)
 repeat
   kbus.sendcode(@clownnose)
@@ -274,31 +489,32 @@ repeat
               codetosend :=  EEPROM_read(xmit)  
         13:IF kbus.codecompare(@remotehome)   
               codetosend :=  EEPROM_read(xmit)  
-
       case codetosend                                                                          
          1: kbus.sendcode(@TrunkOpen)
          2: kbus.sendcode(@RemoteHome)                                
          3: kbus.sendcode(@Remotelock)
          4: kbus.sendcode(@lock3)
-         5: kbus.sendcode(@lockdriver)
-         6: kbus.sendcode(@clownnose)
-         7: kbus.sendcode(@Wrnblnk3sec)
-         8: kbus.sendcode(@ParkLeft)
-         9: kbus.sendcode(@ParkRight)
+         5: kbus.sendcode(@lockdriver)                        
+         6: kbus.sendcode(@clownnose)                         
+         7: kbus.sendcode(@Wrnblnk3sec)                       
+         8: kbus.sendcode(@ParkLeft)                          
+         9: kbus.sendcode(@ParkRight)                         
          10: kbus.sendcode(@InteriorOut)                                             
-         11: kbus.sendcode(@FogLights)
-         12: kbus.sendcode(@HazzAndInt)
-         13: kbus.sendcode(@sroofclose)
-         14: kbus.sendcode(@sroofOpen)
-         15: kbus.sendcode(@DRwindOpen)
-         16: kbus.sendcode(@DRwindClose)
-         17: kbus.sendcode(@PRwindClose)             
-         18: kbus.sendcode(@PRwindOpen)
-         19: kbus.sendcode(@DFwindOpen)
-         20: kbus.sendcode(@DFwindClose)
-         21: kbus.sendcode(@PFwindClose)             
-         22: kbus.sendcode(@Wiper)
-         23: kbus.sendcode(@WiperFluid)
+         11: kbus.sendcode(@FogLightsON)                      
+         12: kbus.sendcode(@FogLightsOFF)                     
+         13: kbus.sendcode(@HazzAndInt)                                                  
+         14: kbus.sendcode(@sroofclose)                                                  
+         15: kbus.sendcode(@sroofOpen)                                                   
+         16: kbus.sendcode(@DRwindOpen)                                                  
+         17: kbus.sendcode(@DRwindClose)             
+         18: kbus.sendcode(@PRwindClose)
+         19: kbus.sendcode(@PRwindOpen) 
+         20: kbus.sendcode(@DFwindOpen) 
+         21: kbus.sendcode(@DFwindClose)             
+         22: kbus.sendcode(@PFwindClose)
+         23: kbus.sendcode(@Wiper)      
+         24: kbus.sendcode(@WiperFluid)  
+
       
 PRI setLED(pin)  
 
@@ -340,7 +556,46 @@ ELSE
   dira[23..20] := %0000
   outa[23..20] := %0000
   dira[pin]~~
-  outa[pin]~~  
+  outa[pin]~~
+
+PRI decimaltostring(value,strptr) | i,x
+
+  x := value == NEGX                                           
+  if value < 0
+    value := ||(value+x)                                       
+    byte[strptr] := "-"
+    strptr++    
+                                                               
+  i := 1_000_000_000                                           
+
+  repeat 10                                                    
+    if value => i
+      byte[strptr] := value / i + "0" + x*(i == 1)             
+      strptr++
+      value //= i                                              
+      result~~                                                 
+    elseif result or i == 1
+      byte[strptr] :="0"                                       
+      strptr++
+    i /= 10                                                    
+
+byte[strptr] := 0
+                                                           
+   
+PRI StrToBase(stringptr, base) : value | chr, index
+{Converts a zero terminated string representation of a number to a value in the designated base.
+Ignores all non-digit characters (except negative (-) when base is decimal (10)).}
+
+  value := index := 0
+  repeat until ((chr := byte[stringptr][index++]) == 0)
+    chr := -15 + --chr & %11011111 + 39*(chr > 56)                              'Make "0"-"9","A"-"F","a"-"f" be 0 - 15, others out of range     
+    if (chr > -1) and (chr < base)                                              'Accumulate valid values into result; ignore others
+      value := value * base + chr                                                  
+  if (base == 10) and (byte[stringptr] == "-")                                  'If decimal, address negative sign; ignore otherwise
+    value := - value
+
+
+                                                        
 
 DAT
 
@@ -376,11 +631,19 @@ DAT
         Wrnblnk3sec  BYTE $3f, $05, $00, $0c, $75, $01
         ParkLeft     BYTE $3f, $0b, $bf, $0c, $00, $00, $00, $40, $00, $00, $00, $06
         ParkRight    BYTE $3f, $0b, $bf, $0c, $00, $00, $00, $80, $00, $00, $00, $06
+
+
         StopLeft     BYTE $3f, $0b, $bf, $0c, $00, $00, $00, $00, $08, $00, $00, $06
         StopRight    BYTE $3f, $0b, $bf, $0c, $00, $00, $00, $00, $10, $00, $00, $06
+
+
         InteriorOut  BYTE $3F, $05, $00, $0C, $68, $01
-        FogLights    BYTE $3f, $0b, $bf, $0c, $00, $00, $00, $00, $00, $00, $01, $06
-        HazzAndInt   BYTE $3F, $05, $00, $0C, $70, $01 'Hazard + Interior lights
+
+        FogLightsON  BYTE $3f, $0b, $bf, $0c, $00, $00, $00, $00, $00, $00, $01, $06
+        FogLightsOFF BYTE $3f, $0b, $bf, $0c, $00, $00, $00, $00, $00, $00, $00, $06
+
+
+        HazzAndInt   BYTE $3F, $05, $00, $0C, $70, $01 
 
 'RADIO BUTTONS
         CDButton1    BYTE $68, $05, $18, $38, $06, $01
@@ -400,6 +663,9 @@ DAT
 'LOCKS
         remoteHome   BYTE $00, $04, $BF, $72, $26
         remoteLock   BYTE $00, $04, $BF, $72, $16
+
+
+
         
         KeyInsert    BYTE $44, $05, $bf, $74, $04, $01
         KeyRemove    BYTE $44, $05, $bf, $74, $00, $FF
@@ -436,13 +702,51 @@ DAT
         CDstartplay   BYTE $18, $0A, $68,  $39, $02, $09, $00, $3F, $00, $00, $00
 
 'Config Mode Commands
-get             BYTE "get",0
-set             BYTE "set",0
-
+get           BYTE "get",0
+set           BYTE "set",0
+sermon        BYTE "sermonitor",0
+seroff        BYTE "seroff",0 
 ComboBox      BYTE "ComboBox",0
+CheckBox      BYTE "CheckBox",0  
 testcmd       BYTE "TestCmd",0
+sersend       Byte "sersend",0
+serdone       Byte "serdone",0
+
+'datalog mode   
+logfilesuffix BYTE ".txt",0
+
+
+
+sndBcast     Byte "Broadcast",0
+sndcdw       Byte "cdw",0
+sndnav       Byte "nav",0
+sndmenu      Byte "Menu",0
+sndmfl       Byte "MFL",0
+sndpdc       Byte "PDC",0
+sndrad       Byte "RAD",0
+snddsp       Byte "DSP",0
+sndike       Byte "KMB",0
+sndtv        Byte "TV",0
+sndlcm       Byte "Lights",0
+sndMID       Byte "MID",0
+sndtel       Byte "Phone",0
+sndnavbar    Byte "Navbar",0
+sndobctxt    Byte "OBC Text",0
+sndseats     Byte "Stored",0
+sndNA        Byte " ",0   
+
+
+'Config remap for buttons
 maplist       BYTE 102,105,107,114,116,118
 xmitlist      BYTE 103,104,106,113,115,117
+
+'Config remap for bluetooth
+btmaplist     BYTE 121,123,125,127,133,131,129
+btxmitlist    BYTE 120,122,124,126,132,130,128
+
+
+
+
 
 
 {{
