@@ -52,12 +52,12 @@ PUB main | i
 i2cObject.Init(29, 28, false)
 incomingcode := Kbus.Start(27, 26)
 ButtonReader := Buttons.start(clkfreq / 100)
-debug.Start(9600)
+debug.Start(115200)
 setled(1)
 
 i := cnt + menudelay
 repeat while cnt < i
-  IF debug.rxcount > 0
+  IF debug.charin ==1 "C"
     configmode
 
 setled(0)
@@ -83,13 +83,16 @@ repeat
 
 PUB configmode  | controlSelected, eepromoffset
 setled(2)
+repeat while debug.rxcount > 0
+  waitcnt(clkfreq / 20 + cnt)
+  debug.rxflush
+
 debug.str(string("Version"))
 debug.newline      
-debug.str(string("0.53"))
+debug.str(string("0.54"))
 debug.newline
 
-repeat while debug.rxcount > 0
-  debug.rxflush
+
 
 repeat
   debug.strin(@configbuffer)
@@ -120,7 +123,6 @@ debug.strin(@getorset)
     EEPROM_set(eepromoffset,debug.decin)
   ELSE 
     sendsetting(eepromoffset,1) 
-      
 
 
 PUB datalogmode     | i,repeattimer, interval, repeatlimit
@@ -131,26 +133,22 @@ bytefill(@logfilename, 0, 10)
 
 
 i:= \sd.mount_explicit(0, 1, 2, 3)
-
 decimaltostring(EEPROM_read(199), @logfilename)
-
-
 bytemove(@logfilename+strsize(@logfilename), @logfilesuffix, 5)
- 
+csvheader 
 
 
 Case EEPROM_Read(119)
   0: repeatlimit := 1
   1: repeatlimit := 2
-  2: repeatlimit := 10
-  3: repeatlimit := 120
+  2: repeatlimit := 20
+  3: repeatlimit := 240
 
 
 
 BYTEfill(@configbuffer,0,20)
 
-interval := cnt + 2_400_000_000 '30 sec
-'interval := cnt + 400_000_000 '5 sec
+interval := cnt + 1_200_000_000 '15 sec
 
 repeat
   IF kbus.checkforcode(50) > -1
@@ -166,12 +164,37 @@ repeat
   IF cnt > interval
     repeattimer++
     If  repeattimer == repeatlimit
-
       writetolog
       repeattimer := 0
-    interval := cnt +2_400_000_000 '30 sec
-'    interval := cnt + 400_000_000 '5 sec 
+    interval := cnt +1_200_000_000 '15 sec
+
   
+PRI csvheader
+sd.popen(@logfilename, "a")    
+
+IF EEPROM_Read(202) == 0   ' time
+  sd.pputs(string("time,"))
+
+IF EEPROM_Read(201) == 0   ' speed
+  sd.pputs(string("speed,"))
+
+IF EEPROM_Read(204) == 0   ' RPM
+  sd.pputs(string("rpm,"))
+
+'IF EEPROM_Read(206) == 0   ' GPS
+'   sd.pputc("x")
+'   sd.pputc(",")
+   
+IF EEPROM_Read(207) == 0   ' outside temp
+  sd.pputs(string("outsidetemp,"))
+
+IF EEPROM_Read(208) == 0   ' inside temp
+  sd.pputs(string("coolanttemp,"))
+sd.pputc("0")
+sd.pputc(13)
+sd.pputc(10)
+sd.pclose
+
 
 PRI writetolog  
 setled(99)
