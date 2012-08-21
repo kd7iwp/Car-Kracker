@@ -19,7 +19,7 @@ Revision History:
 CON
   _clkmode = xtal1 + pll16x                             ' Crystal and PLL settings.
   _xinfreq = 5_000_000                                  ' 5 MHz crystal (5 MHz x 16 = 80 MHz).
-  Menudelay = 80_000_000 * 3
+  Menudelay = 80_000_000 * 4
 
   EEPROM_Addr   = %1010_0000   
   EEPROM_base   = $8000
@@ -129,25 +129,15 @@ repeattimer := 0
 EEPROM_set(199, i + 1)
 bytefill(@logfilename, 0, 10)
 
-debug.str(string("Datalog mode"))
-debug.newline
-
-debug.str(string("Prefix"))
-debug.dec(i)
-debug.newline
 
 i:= \sd.mount_explicit(0, 1, 2, 3)
 
 decimaltostring(EEPROM_read(199), @logfilename)
-debug.str(string("dectostring"))
-debug.str(@logfilename)
-debug.newline
+
 
 bytemove(@logfilename+strsize(@logfilename), @logfilesuffix, 5)
  
-debug.str(string("Filename "))
-debug.str(@logfilename)
-debug.newline
+
 
 Case EEPROM_Read(119)
   0: repeatlimit := 1
@@ -155,15 +145,12 @@ Case EEPROM_Read(119)
   2: repeatlimit := 10
   3: repeatlimit := 120
 
-debug.str(string("repeat: "))
-debug.dec(repeatlimit)
-debug.newline
-  
+
 
 BYTEfill(@configbuffer,0,20)
 
-'interval := cnt + 2_400_000_000 '30 sec
-interval := cnt + 400_000_000 '5 sec
+interval := cnt + 2_400_000_000 '30 sec
+'interval := cnt + 400_000_000 '5 sec
 
 repeat
   IF kbus.checkforcode(50) > -1
@@ -179,12 +166,12 @@ repeat
   IF cnt > interval
     repeattimer++
     If  repeattimer == repeatlimit
-      debug.str(string("writing"))
+
       writetolog
       repeattimer := 0
-'    interval := cnt +2_400_000_000 '30 sec
-    interval := cnt + 400_000_000 '5 sec 
-    debug.str(string("reset"))  
+    interval := cnt +2_400_000_000 '30 sec
+'    interval := cnt + 400_000_000 '5 sec 
+  
 
 PRI writetolog  
 setled(99)
@@ -208,9 +195,9 @@ IF EEPROM_Read(204) == 0   ' RPM
   sd.pputs(@configbuffer) 
   sd.pputc(",")
 
-IF EEPROM_Read(206) == 0   ' GPS
-   sd.pputc("x")
-   sd.pputc(",")
+'IF EEPROM_Read(206) == 0   ' GPS
+'   sd.pputc("x")
+'   sd.pputc(",")
    
 IF EEPROM_Read(207) == 0   ' outside temp
   decimaltostring(outtemp, @configbuffer)  
