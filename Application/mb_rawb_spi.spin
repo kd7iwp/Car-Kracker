@@ -2,21 +2,17 @@
   SPI interface routines for SD & SDHC & MMC cards
 
   Jonathan "lonesock" Dummer
-
-  version 0.4   2011 April 26 - improved Spin initialization and calling overhead a bit
   version 0.3.0  2009 July 19
 
   Using multiblock SPI mode exclusively.
-
-  This is the "SAFE" version...uses
-  * 1 instruction per bit writes
-  * 2 instructions per bit reads
 
   For the fsrw project:
   fsrw.sf.net
 }}
 
 CON
+  SDcog = 7
+
   ' possible card types
   type_MMC      = 1
   type_SD       = 2
@@ -94,58 +90,42 @@ PUB start( basepin )
   return start_explicit( basepin, basepin+1, basepin+2, basepin+3 )
 
 PUB readblock( block_index, buffer_address )
-  ' send down the command
-  SPI_block_index := block_index
-  SPI_buffer_address := buffer_address
-  SPI_command := "r"
-  ' now check for any errors
-  if NOT SPI_engine_cog 
+  if SPI_engine_cog == 0
     abort ERR_SPI_ENGINE_NOT_RUNNING
   if (buffer_address & 3)
     abort ERR_BLOCK_NOT_LONG_ALIGNED
-  ' and wait till done
-  repeat
-  while SPI_command > 0 ' == "r"
+  SPI_block_index := block_index
+  SPI_buffer_address := buffer_address
+  SPI_command := "r"
+  repeat while SPI_command == "r"
   if SPI_command < 0
     abort SPI_command
 
 PUB writeblock( block_index, buffer_address )
-  ' send down the command
-  SPI_block_index := block_index
-  SPI_buffer_address := buffer_address
-  SPI_command := "w"
-  ' check for errors
-  if NOT SPI_engine_cog
+  if SPI_engine_cog == 0
     abort ERR_SPI_ENGINE_NOT_RUNNING
   if (buffer_address & 3)
     abort ERR_BLOCK_NOT_LONG_ALIGNED
-  ' wait till done
-  repeat
-  while SPI_command > 0 ' == "w"
+  SPI_block_index := block_index
+  SPI_buffer_address := buffer_address
+  SPI_command := "w"
+  repeat while SPI_command == "w"
   if SPI_command < 0
     abort SPI_command
 
 PUB get_seconds
-  ' send down the command
-  SPI_command := "t"
-  ' check for errors
-  if NOT SPI_engine_cog
+  if SPI_engine_cog == 0
     abort ERR_SPI_ENGINE_NOT_RUNNING
-  ' wait till done
-  repeat
-  while SPI_command > 0 ' == "t"
+  SPI_command := "t"
+  repeat while SPI_command == "t"
   ' secods are in SPI_block_index, remainder is in SPI_buffer_address
   return SPI_block_index
 
 PUB get_milliseconds : ms
-  ' send down the command
-  SPI_command := "t"
-  ' check for errors
-  if NOT SPI_engine_cog
+  if SPI_engine_cog == 0
     abort ERR_SPI_ENGINE_NOT_RUNNING
-  ' wait till done
-  repeat
-  while SPI_command > 0 ' == "t"
+  SPI_command := "t"
+  repeat while SPI_command == "t"
   ' secods are in SPI_block_index, remainder is in SPI_buffer_address
   ms := SPI_block_index * 1000
   ms += SPI_buffer_address * 1000 / clkfreq
@@ -178,11 +158,9 @@ PUB start_explicit( DO, CLK, DI, CS ) : card_type | tmp, i
   dira |= maskAll  
   ' get the card in a ready state: set DI and CS high, send => 74 clocks
   outa |= maskAll
-  ' the clock starts high, because of the previous statement, so toggle an odd # of times
-  repeat 4095
-    outa[CLK] ^= 1
-    'outa[CLK] := 1
-    'outa[CLK] := 0
+  repeat 4096
+    outa[CLK]~~
+    outa[CLK]~
   ' time-hack
   SPI_block_index := cnt
   ' reset the card
@@ -198,8 +176,7 @@ PUB start_explicit( DO, CLK, DI, CS ) : card_type | tmp, i
             read_32_slow        ' these extra clocks are required for some MMC cards
           send_slow( $FD, 8 )   ' stop token
           read_32_slow
-          repeat
-          while read_slow <> $FF
+          repeat while read_slow <> $FF
         else
           ' exit multiblock read mode
           send_cmd_slow( CMD12, 0, $61 )           
@@ -214,15 +191,14 @@ PUB start_explicit( DO, CLK, DI, CS ) : card_type | tmp, i
     if (tmp & $1FF) <> $1AA
       crash( ERR_3v3_NOT_SUPPORTED )
     ' try to initialize the type 2 card with the High Capacity bit
-    repeat
-    while send_cmd_slow( ACMD41, |<30, $77 )
+    repeat while send_cmd_slow( ACMD41, |<30, $77 )
     ' the card is initialized, let's read back the High Capacity bit
     if send_cmd_slow( CMD58, 0, $FD ) <> 0
       crash( ERR_OCR_FAILED )
     ' get back the data
     tmp := read_32_slow
     ' check the bit
-    if tmp & constant( |<30 ) 
+    if tmp & |<30
       card_type := type_SDHC
       adrShift := 0
     else
@@ -232,13 +208,11 @@ PUB start_explicit( DO, CLK, DI, CS ) : card_type | tmp, i
     if send_cmd_slow( ACMD41, 0, $E5 ) < 2
       ' this is a type 1 SD card (1 means busy, 0 means done initializing)
       card_type := type_SD
-      repeat
-      while send_cmd_slow( ACMD41, 0, $E5 )
+      repeat while send_cmd_slow( ACMD41, 0, $E5 )
     else
       ' mark that it's MMC, and try to initialize
       card_type := type_MMC
-      repeat
-      while send_cmd_slow( CMD1, 0, $F9 )
+      repeat while send_cmd_slow( CMD1, 0, $F9 )
     ' some SD or MMC cards may have the wrong block size, set it here
     send_cmd_slow( CMD16, 512, $15 )
   ' card is mounted, make sure the CRC is turned off
@@ -249,13 +223,14 @@ PUB start_explicit( DO, CLK, DI, CS ) : card_type | tmp, i
   outa |= maskCS
   ' set my counter modes for super fast SPI operation
   ' writing: NCO single-ended mode, output on DI
-  writeMode := constant(%00100 << 26) | DI
+  writeMode := (%00100 << 26) | (DI << 0)
   ' reading
-  'readMode := constant(%11000 << 26) | DO | (CLK << 9)
+  'readMode := (%11000 << 26) | (DO << 9) | (CLK << 0)
+  readMode := (%11000 << 26) | (DO << 0) | (CLK << 9)
   ' clock
-  'clockLineMode := constant(%00110 << 26) | CLK ' DUTY, 25% duty cycle
+  clockInMode := (%00110 << 26) | (CLK << 0) ' DUTY, 25% duty cycle
   ' clock
-  clockLineMode := constant(%00100 << 26) | CLK ' NCO, 50% duty cycle
+  'clockOutMode := (%00100 << 26) | (CLK << 0) ' NCO, 50% duty cycle
   ' how many bytes (8 clocks, >>3) fit into 1/2 of a second (>>1), 4 clocks per instruction (>>2)?
   N_in8_500ms := clkfreq >> constant(1+2+3)
   ' how long should we wait before auto-exiting any multiblock mode?
@@ -266,11 +241,11 @@ PUB start_explicit( DO, CLK, DI, CS ) : card_type | tmp, i
   sdAdr := @SPI_block_index
   SPI_command := 0 ' just make sure it's not 1
   ' start my driver cog and wait till I hear back that it's done 
-  SPI_engine_cog := cognew( @SPI_engine_entry, @SPI_command ) + 1
-  if NOT SPI_engine_cog
+  SPI_engine_cog :=  7
+  coginit( SDCog, @SPI_engine_entry, @SPI_command ) 
+  if( SPI_engine_cog == 0 )
     crash( ERR_SPI_ENGINE_NOT_RUNNING )
-  repeat
-  while SPI_command <> -1
+  repeat while SPI_command <> -1
   ' and we no longer need to control any pins from here
   dira &= !maskAll
   ' the return variable is card_type   
@@ -283,8 +258,7 @@ PUB release
 }}
   if SPI_engine_cog
     SPI_command := "z"
-    repeat
-    while SPI_command > 0 '== "z"
+    repeat while SPI_command == "z"
     
 PUB stop
 {{
@@ -300,7 +274,6 @@ PRI crash( abort_code )
   exit as gracefully as possible.
 }}
   ' and we no longer need to control any pins from here
-  ' **NOTE ** don't just use "dira := 0", because the calling cog may already be using some pins!!
   dira &= !maskAll
   ' and report our error
   abort abort_code
@@ -353,31 +326,30 @@ PRI send_cmd_slow( cmd, val, crc ) : reply | time_stamp
       byte[dbg_ptr++] := read_slow
   '}  
 
+PRI send_slow( value, bits_to_send )
+  value ><= bits_to_send
+  repeat bits_to_send
+    outa[pinCLK]~
+    outa[pinDI] := value
+    value >>= 1
+    outa[pinCLK]~~
+
 PRI read_32_slow : r
   repeat 4
     r <<= 8
     r |= read_slow
-
-PRI send_slow( value, bits_to_send )
-  value ><= bits_to_send
-  repeat bits_to_send
-    outa[pinDI] := value
-    outa[pinCLK] := 1
-    value >>= 1
-    outa[pinCLK] := 0
-
   
 PRI read_slow : r
 {{
   Read back 8 bits from the card
 }}
   ' we need the DI line high so a read can occur
-  outa[pinDI] := 1
+  outa[pinDI]~~
   ' get 8 bits (remember, r is initialized to 0 by SPIN)
   repeat 8
-    outa[pinCLK] := 1
+    outa[pinCLK]~
+    outa[pinCLK]~~
     r += r + ina[pinDO]
-    outa[pinCLK] := 0
   ' error check
   if( (cnt - SPI_block_index) > (clkfreq << 2) )
     crash( ERR_CARD_BUSY_TIMEOUT )
@@ -392,7 +364,7 @@ SPI_engine_entry
         ' Counter A drives data out
         mov ctra,writeMode
         ' Counter B will always drive my clock line
-        mov ctrb,clockLineMode
+        mov ctrb,clockInMode
         ' set our output pins to match the pin mask
         mov dira,maskAll
         ' handshake that we now control the pins
@@ -607,9 +579,10 @@ busy_fast_ret
 
 out8
         andn outa,maskDI 
-        'movi phsb,#%11_0000000
-        mov phsb,#0
-        movi frqb,#%01_0000000        
+        movi phsb,#%11_0000000
+        movi frqb,#%01_0000000
+        'mov phsb,#0  
+        'movi frqb,#%010000000
         rol phsa,#1
         rol phsa,#1
         rol phsa,#1
@@ -623,7 +596,7 @@ out8
 out8_ret
         ret
 
-{
+
 in8
         or outa,maskDI
         mov ctra,readMode
@@ -644,34 +617,6 @@ in8
         mov readback,phsa
         mov frqa,#0
         mov ctra,writeMode
-in8_ret
-        ret
-}
-in8
-        neg phsa,#1' DI high
-        mov readback,#0
-        ' set up my clock, and start it
-        movi phsb,#%011_000000
-        movi frqb,#%001_000000
-        ' keep reading in my value
-        test maskDO,ina wc
-        rcl readback,#1
-        test maskDO,ina wc
-        rcl readback,#1
-        test maskDO,ina wc
-        rcl readback,#1
-        test maskDO,ina wc
-        rcl readback,#1
-        test maskDO,ina wc
-        rcl readback,#1
-        test maskDO,ina wc
-        rcl readback,#1
-        test maskDO,ina wc
-        rcl readback,#1
-        test maskDO,ina wc
-        mov frqb,#0 ' stop the clock
-        rcl readback,#1
-        mov phsa,#0 'DI low
 in8_ret
         ret
         
@@ -725,8 +670,7 @@ transfer_long
         djnz ops_left,#four_transfer_passes
         ' restore the counter mode
         mov frqb,#0
-        mov phsb,#0
-        mov ctrb,clockLineMode
+        mov ctrb,clockInMode
 hub_cog_transfer_ret
         ret
         
@@ -743,45 +687,58 @@ read_single_block
 if_nz   djnz tmp1,#:get_resp
 if_nz   neg user_cmd,#ERR_ASM_NO_READ_TOKEN  
 if_nz   jmp #read_single_block_ret
-        ' set DI high
-        neg phsa,#1
         ' read the data
+        mov ctra,readMode
         mov ops_left,#128
 :read_loop        
-        mov tmp1,#4
-        movi phsb,#%011_000000
-:in_byte        
         ' Start my clock
-        movi frqb,#%001_000000
-        ' keep reading in my value, BACKWARDS!  (Brilliant idea by Tom Rokicki!)
-        test maskDO,ina wc
-        rcl readback,#8
-        test maskDO,ina wc
-        muxc readback,#2
-        test maskDO,ina wc
-        muxc readback,#4
-        test maskDO,ina wc
-        muxc readback,#8
-        test maskDO,ina wc
-        muxc readback,#16
-        test maskDO,ina wc
-        muxc readback,#32
-        test maskDO,ina wc
-        muxc readback,#64
-        test maskDO,ina wc
+        mov frqa,#1<<7
+        mov phsa,#0
+        movi phsb,#%11_0000000
+        movi frqb,#%01_0000000
+        ' keep reading in my value, one bit at a time!  (Kuneko - "Wh)
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shl frqa,#15
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shl frqa,#15
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shl frqa,#15
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
+        shr frqa,#1
         mov frqb,#0 ' stop the clock
-        muxc readback,#128
-        ' go back for more
-        djnz tmp1,#:in_byte
-        ' make it...NOT backwards [8^)
-        rev readback,#0
 :store_read_long
-        mov 0-0,readback       ' due to some counter weirdness, we need this mov
+        mov readback,phsa       ' due to some counter weirdness, we need this mov
         add :store_read_long,const512
         djnz ops_left,#:read_loop
-
-        ' set DI low
-        mov phsa,#0
+        
+        ' get out of our counter mode, but 
+        'mov phsb,#0     ' make sure we don't send any extra clocks
+        mov frqa,#0     ' make sure we don't mess with the future data out
+        'mov phsa,#0     ' clear the DI line
+        mov ctra,writeMode
         
         ' now read 2 trailing bytes (CRC)
         call #in8      ' out8 is 2x faster than in8
@@ -805,8 +762,8 @@ write_single_block
         ' $FC for multiblock, $FE for single block
         movi phsa,#$FC<<1
         call #out8
-        mov phsb,#0             ' make sure my clock accumulator is right
-        'movi phsb,#%11_0000000
+        'mov phsb,#0             ' make sure my clock accumulator is right
+        movi phsb,#%11_0000000
 :write_loop
         ' read 4 bytes
         mov phsa,speed_buf
@@ -878,8 +835,8 @@ sdAdr         long 0    ' where on the SD card does it read/write?
 writeMode     long 0    ' the counter setup in NCO single ended, clocking data out on pinDI
 'clockOutMode  long 0    ' the counter setup in NCO single ended, driving the clock line on pinCLK
 N_in8_500ms   long 1_000_000 ' used for timeout checking in PASM
-'readMode      long 0
-clockLineMode long 0
+readMode      long 0
+clockInMode   long 0
 clockXferMode long %11111 << 26
 const512      long 512
 const1024     long 1024

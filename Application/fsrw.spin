@@ -45,11 +45,9 @@ con
 '   The object that provides the block-level access.
 '
 obj
-   'sdspi: "tiny_sb_spi"
-   'sdspi: "tiny_mb_spi"
-   sdspi: "safe_spi"
-'    sdspi: "mb_rawb_spi"
-'   sdspi: "mmcsdhc_spi"
+'  sdspi: "safe_spi"
+    sdspi: "mb_rawb_spi"
+
 var
 '
 '

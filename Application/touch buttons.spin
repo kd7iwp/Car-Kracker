@@ -1,19 +1,17 @@
 CON
 
   BUTTON_PINS   = $FF           ' The QuickStart's touch buttons are on the eight LSBs
-  SAMPLES       = 32            ' Require 32 high redings to return true
-
+  SAMPLES       = 320           ' Require 32 high redings to return true
+  touchcog = 7
 
 VAR
-  
   long  Results
-
 
 PUB Start(Rate) 
 
   Results := Rate
-  return cognew(@Entry, @Results)      ' Launch a new cog to read samples
-
+  coginit(touchcog, @Entry, @Results)      ' Launch a new cog to read samples
+  return 7 
 
 PUB State | Accumulator
 

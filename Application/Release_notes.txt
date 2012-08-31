@@ -1,0 +1,100 @@
+RELEASE NOTES V.55
+
+                                                                        
+**************************                                                                                           
+New:     Debug mode                                                                             
+**************************
+           Run main modes and tests from the serial terminal by hitting 'd' during bootup
+           Loop tests are available, along with cmd fire tests and bus sniffers                 
+           Main modes are much more verbose.  Can be read with 'Kracker Status' tab.             
+
+Enter debug mode by pressing the 'd' key over serial within a few seconds of bootup (serial is 115200bps, 8.0.0).  A menu will appear with several tests and modes.  Available modes;
+
+0 - 4: Regular Modes
+These are the regular Kracker modes; diagnostic, music, repeat, and remap.  Serial Repeat is most useful for debug and diagnostics
+
+5: Hex Bus Sniffer
+Show every incoming byte on the bus, in hex, as it appears.  Stateless, so there is no attempt at message identification
+
+6 - 8: CMD Blast
+Issue a message (3 second warning lights blink) on the bus.
+* Bus Watch - Issues the message and switches to watching the bus.
+* Single - Issues the message once and returns
+* Repeat - Issues the message every 10 seconds, ad infinitum
+
+9: Audio Player
+Test a wav file stored on SD card.  This does not issue bus commands - it just plays an audio file, outputting it to the audio connector.  Use wasd to change Albums and tracks, and e to return to the debug menu
+
+10: Read Time, Parsed
+Request the current time from the dashboard, and parse the result.  This test loops
+
+11: Write to Radio/NAV
+Write a test string to the Radio/NAV.  To exit, just hit the enter key without any text     
+
+
+**************************                                                                                                
+New:     LED Notifier
+**************************                                                                    
+            LED's are updated to note status                                                    
+            1: LED's run towards USB jack = EEPROM Read                                         
+            2: Towards jack and return = Kbus In                                                
+            3: LED's run Away from USB jack = EEPROM Write                                   
+            4: Away jack and return = Kbus Out                                               
+            5: Continous xoxox = no or bad SD
+
+LED's that run only in one direction are usually just data between the Kracker and computer.  LED's that go one way and return signify kbus Rx/Tx events
+
+There is also a second set of notifications running - the Core Kbus transeiver lights up LED's during kbus events - helpful for scoping
+- LED16 (LED farthest from USB jack): On when a byte is being sent
+- LED17: Toggles whenever a byte train has been received or transmitted
+- LED18: On when a byte is being received
+- LED19: Toggles at each bit edge when a byte is being received or transmitted
+
+
+**************************
+New:     Stateless TX/RX engine                                                                     
+**************************
+            more reliable transfers, with a larger buffer and less memory                           
+
+The new KbusCore object combines kbus-specific methods and general-RX/TX methods.
+
+For general RX/TX, bytes are handled in assembly and loaded into a 256-byte buffer.  RX is always performed before any TX can take place, and there is a time delay between switching events.
+The incoming byte stream is turned into messages by testing every incoming byte with the nextcode and holdforcode methods.  These return a found code into codelen, and only take bytes out of the buffer if a code is found
+
+High level Kbus functions are supported, including pattern-matching incoming messages, sending text to the radio, and interrogating the dash.
+
+For message Xmits - the engine uses the second byte of the message as the length and appends the checksum.  to blink the hazzard lights, use; $3f, $05, $00, $0c, $75, $01
+
+
+**************************
+New:     Radio button Remaps                                                                        
+**************************
+            Remap radio buttons to other functions using the Kustomizer                             
+            Display car data on the radio display                                                   
+            Remap CD buttons to CD+ and CD- to support more albums        
+
+When in music mode, the Kracker can trigger alternate actions when the RAD/Nav buttons are pushed.  By mapping a CD button to 'Next CD', you can have more than 5 albums.  You can also issue text to the radio like the current time or temperature.
+
+Kracker output volume can also be controlled, either as a default set through the kustomizer, or dynamically mapped to the RAD/Nav buttons.  An Aux-in mode turns off audio playback while still simulating a CD changer, so you can add your own audio source.
+
+
+**************************
+More
+**************************  
+New:     Firmware version reported to Kustomizer on bootup                             
+New:     Default config TX/RX speed is now 115_200                                     
+New:     Cogs are hardmapped to reduce jitter
+                                                                                       
+Fixed:   A few new bus commands, and better, more compatible commands for unlock / lock
+Fixed:   Faster sample speed for touch buttons to eliminate audio interference         
+Fixed:   Possible buffer overflow on SD card player object                             
+                                                                                       
+Removed: Nothing
+
+Previous Releases
+-----
+0.54:   More data available for logging
+0.53:   Added Datalog mode, Bus Monitor Mode
+        Version check / report
+0.51:   Preferences are now stored on EEPROM for reboots, they can be changed through a serial connection
+}
