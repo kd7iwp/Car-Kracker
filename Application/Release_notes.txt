@@ -1,5 +1,4 @@
-RELEASE NOTES V.55
-
+RELEASE NOTES V.56
                                                                         
 **************************                                                                                           
 New:     Debug mode                                                                             
@@ -88,6 +87,7 @@ New:     Cogs are hardmapped to reduce jitter
 Fixed:   A few new bus commands, and better, more compatible commands for unlock / lock
 Fixed:   Faster sample speed for touch buttons to eliminate audio interference         
 Fixed:   Possible buffer overflow on SD card player object                             
+Fixed:   Better reply to Radio Poll for fewer connection drops
                                                                                        
 Removed: Nothing
 

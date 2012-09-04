@@ -1,11 +1,13 @@
 ''********************************************
-''*  Car Kracker Main, V0.55                 *
+''*  Car Kracker Main, V0.56                 *
 ''*  Author: Nick McClanahan (c) 2012        *
 ''*  See end of file for terms of use.       *
 ''********************************************
 
 {-----------------REVISION HISTORY-----------------
   For complete usage and version history, see Release_Notes.txt
+
+0.56: Fixed Wav Playback bug
                                                                                                 
 0.55: Major Release                                                                             
 -----                                                                                           
@@ -52,10 +54,17 @@ CON
 
   EEPROM_Addr   = %1010_0000   
   EEPROM_base   = $8000
-  stack_base    = $7000
+  stack_base    = $7500
 
-  maincog =  4, LEDcog = 2   
-'Cogs are custom mapped to reduce jitter - COG 0 goes with audio.  Definitions: 'COG 7: Touch / SD 'COG 6: Kbus RX 'Cog 5: Debug Console'Cog 3: Audio Buffer 'Cog 2: LED notifier 'Cog 0: Audio
+  maincog =  4, LEDcog = 2  
+'Cogs are custom mapped to reduce jitter - COG 0 goes with audio.  Definitions:
+'COG 7: Touch / SD
+'COG 6: Kbus RX
+'Cog 5: Debug Console
+'Cog 4: Main Thread
+'Cog 3: Audio Buffer '
+'Cog 2: LED notifier
+'Cog 0: Audio
 
 OBJ
   Kbus         : "kbusCore.spin"
@@ -96,13 +105,15 @@ cogstop(0)
 
 
 PUB main | i, c
+
 i2cObject.Init(29, 28, false)
-kbus.Start(27, 26, %0110, 9600)
+'kbus.Start(27, 26, %0110, 9600)
+kbus.Start(27, 26, %0010, 9600)
 debug.StartRxTx(31, 30, %0000, 115200)
 
 setled(1)
 
-debug.str(string("Hit the C key to enter config mode, d for debug",13))
+debug.str(string("Hit d key for debug",13))
 
 i := cnt
 i  += menudelay
@@ -290,7 +301,7 @@ setLED(0)
 setLED(2)
 waitcnt(clkfreq  / 1000 + cnt)
 repeat until debug.rxcheck  == -1
-debug.str(string("Version",13, "0.55", 13))
+debug.str(string("Version",13, "0.56", 13))
 
 repeat
   debug.strin(@configbuffer)
@@ -652,8 +663,7 @@ repeat
   waitcnt(clkfreq * 5 + cnt)
 
 
- 
-PUB MUSICMODE     | i, d, volset
+PUB MUSICMODE     | i, d, volset , len
 debug.str(string("Entering: Music Mode",13))
 
 playerstatus := FALSE
@@ -678,61 +688,73 @@ ELSE
       waitcnt(clkfreq / 3 + cnt)
     reboot
 
-settrack(1,1)  
+settrack(2,1)  
 
 
 kbus.sendcode(@CDAnnounce)
 debug.str(string("XMIT: CD Announce",13))
 
 repeat
-  kbus.clearcode
-  kbus.nextcode(100)
-  displaybuffer
-  IF byte[kbus.codeptr][2] == $18
-    case byte[kbus.codeptr][4] 
-      $72 :
-            debug.str(string(13,"REC: CD Polled"))
-            kbus.sendcode(@CDRespond)
-            debug.str(string(" - XMIT: Responded",13))
-   
-      $06 : debug.str(string(13,"REC: CD CHG:"))
-             i := (BYTE[kbus.codeptr+5])
+  IF kbus.rx == $68
+    len := kbus.rx
+    IF kbus.rx == $18
+      kbus.rx
+      case kbus.rx 
+        $72 :
+              kbus.sendcode(@CDRespond)           
+              debug.str(string(13,"REC: CD Polled"))
+              debug.str(string(" - XMIT: Responded",13))
+
+        $06 : debug.str(string(13,"REC: CD CHG:"))
+             i := kbus.rx
              debug.dec(i)
+             kbus.rx
              musiccmd(radioremaps[--i])
+                 
+        $08 :  debug.str(string(13,"REC: Random:"))  
+               repeat len -3 
+                kbus.rx
+               musiccmd(radioremaps[5])             
 
-      $08 :  debug.str(string(13,"REC: Random:"))  
-             musiccmd(radioremaps[5])             
-                                                    
-      $05 : If BYTE[kbus.codeptr+5] == 1
+        $05 :
+              If kbus.rx == 1
                debug.str(string(13,"REC: Prev Track"))
+               kbus.rx
                musiccmd(radioremaps[6])
-            ELSE
+              ELSE
                debug.str(string(13,"REC: Next Track"))
+               kbus.rx
                musiccmd(radioremaps[7])
-   
-      $01 : debug.str(string(13,"REC: Track Stop")) 
-            kbus.sendcode(music.TrackEndCode)
-            music.stopplaying
-            debug.str(string(" - XMIT: Track Stopped",13))
-            playerstatus := FALSE                                                                         
-            
-      $00 : debug.str(string("REC: Status Request"))
-            IF playerstatus                                           
-              debug.str(string(" - XMIT: Status Playing",13))
-              kbus.sendcode(music.PlayingCode)                  
-            ELSE                                                
-              debug.str(string(" - XMIT: Status Not Playing",13))
-              kbus.sendcode(music.notplaycode)                  
-   
-      $03 :If BYTE[kbus.codeptr+5] == 0
-             debug.str(string("REC: Play Start"))
-              kbus.sendcode(music.startPlayCode)
-             debug.str(string(" - XMIT: Begin Playing Cog"))
-             music.startsong
-             playerstatus := TRUE                                 
 
-  IF (music.trackcompleted == TRUE) AND (playerstatus == TRUE)    
-    musiccmd(2)
+        $01 : debug.str(string(13,"REC: Track Stop")) 
+               kbus.rx
+               kbus.sendcode(music.TrackEndCode)
+               music.stopplaying
+               debug.str(string(" - XMIT: Nothing",13))
+               playerstatus := FALSE                  
+
+        $00 : debug.str(string("REC: Status Request"))
+              kbus.rx
+              kbus.rx                      
+              IF playerstatus == 255                                           
+                kbus.sendcode(music.PlayingCode)
+                debug.str(string(" - XMIT: Status Playing",13))
+              ELSE                                                
+                kbus.sendcode(music.notplaycode)                  
+                debug.str(string(" - XMIT: Status Not Playing",13))
+                     
+        $03 :If kbus.rx == 0
+               kbus.rx
+               kbus.sendcode(music.startPlayCode)
+               debug.str(string("REC: Play Start"))
+               debug.str(string(" - XMIT: Begin Playing",13))
+               music.startsong
+               playerstatus := TRUE                                 
+
+                                
+
+'  IF (music.trackcompleted == TRUE) AND (playerstatus == 255)    
+'    musiccmd(2)
 
 
 
@@ -757,27 +779,29 @@ case selectedaction
       debug.str(string(" - XMIT: Prev CD",13))
       settrack(CurrCD -1, 1)
       kbus.sendcode(music.seekingcode)
-      kbus.sendcode(music.StartPlayCode)
-      music.startsong
-      playerstatus := TRUE
+'      kbus.sendcode(music.StartPlayCode)
+'      music.startsong
+'      playerstatus := TRUE
+      playerstatus := FALSE                   
 
   4 :        'Next CD
       debug.str(string(" - XMIT: Next CD",13))
       settrack(CurrCD + 1, 1)
       kbus.sendcode(music.seekingcode)
-      kbus.sendcode(music.StartPlayCode)
-      music.startsong
-      playerstatus := TRUE
-             
+'      kbus.sendcode(music.StartPlayCode)
+'      music.startsong
+ '     playerstatus := TRUE
+      playerstatus := FALSE
+                   
   5..9 :        'CD 1-5
       debug.str(string(" - XMIT: CD"))
       debug.dec(selectedaction - 4)
       debug.newline 
       settrack(selectedaction -4, 1)
-      kbus.sendcode(music.seekingcode)
       kbus.sendcode(music.StartPlayCode)
       music.startsong            
       playerstatus := TRUE
+'                   
 
   10 :       'Aux In               
       debug.str(string("sent: AuxIn",13))
@@ -815,8 +839,7 @@ case selectedaction
       kbus.sendtext(string("k vol-"))
       music.changevol(+1)      
 
-  Other :  debug.str(string("Command Not Found",13))
-
+  Other :  debug.str(string("Command Not Found",13)) 
 
 Pri settrack(CD,Track)
 CurrCD := CD  #> 1
@@ -1210,7 +1233,7 @@ DAT
         CDstatusreq   BYTE $68, $05, $18, $38, $00, $00 
          
         'From CD changer ($18h)
-        CDannounce    BYTE $18, $04, $68, $02, $01
+        CDannounce    BYTE $18, $04, $FF, $02, $01
         CDrespond     BYTE $18, $04, $68, $02, $00
 
 
