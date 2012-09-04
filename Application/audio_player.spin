@@ -131,11 +131,18 @@ MainLoop
         IF_Z JMP #Done
         waitcnt WaitCount,dRate
 
+        rdbyte volstk, volptr
+
+        rdbyte abortstk, abortptr
+        cmp abortstk, #5 wz
+        IF_Z JMP #Done 
+
+
         RDLONG Right,pData
-        MOV   Left,Right
-'        SAR   Right,#attenuation
+        MOV Left,Right
+        SAR Right,volstk
         ROL Left,#16       '16 LSBs are left channel...
-'        SAR   Left,#attenuation
+        SAR Left,volstk
         ADD Right,twos      'Going to cheat a bit with the LSBs here...  Probably shoud fix this!
         Add Left,twos
         MOV FRQA,Right
@@ -204,6 +211,8 @@ nSamples long 2000
 
 abortptr long 0
 volptr  long  0
+abortstk long 0
+volstk  long  0
  
 
 {{

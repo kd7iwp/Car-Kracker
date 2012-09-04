@@ -299,23 +299,27 @@ repeat
 PUB configmode  | controlSelected, eepromoffset
 setLED(0)
 setLED(2)
-waitcnt(clkfreq  / 1000 + cnt)
+waitcnt(clkfreq  / 800 + cnt)
 repeat until debug.rxcheck  == -1
 debug.str(string("Version",13, "0.56", 13))
 
 repeat
   debug.strin(@configbuffer)
+
   IF strcomp(@configbuffer, @testcmd)
     configblast(debug.decin)
     debug.strin(@getorset)
     debug.strin(@configbuffer)
-    next                                                              
+                                                     
+
   IF strcomp(@configbuffer, @sermon)
     serialmonitormode
-    next
+
+    
   IF strcomp(@configbuffer, @combobox) 
     eepromoffset := 100 + debug.decin
     getseteeprom(eepromoffset) 
+
   IF strcomp(@configbuffer, @checkbox) 
     eepromoffset := 200 + debug.decin
     getseteeprom(eepromoffset)
@@ -611,8 +615,13 @@ PUB configblast(cmd) | selected
  case cmd
    0 :  kbus.sendcode(@volup)                         
    1 :  kbus.sendcode(@voldown)                       
+
    2 :  kbus.sendcode(@whlplus)                       
+        kbus.sendcode(@whlplusup)
+
    3 :  kbus.sendcode(@whlmin)                        
+        kbus.sendcode(@whlminup)
+
    4 :  kbus.sendcode(@RTButton)                      
    5 :  kbus.sendcode(@Dial)                          
    6 :  kbus.sendcode(@DRwindOpen)                    
@@ -766,40 +775,34 @@ case selectedaction
   1 :        'Previous Track       
       debug.str(string(" - XMIT: Prev Track",13))
       settrack(CurrCD, CurrTrack -1)
-      kbus.sendcode(music.seekingcode) 
       playerstatus := FALSE
 
   2 :        'Next Track           
       debug.str(string(" - XMIT: Next Track",13))
       settrack(CurrCD, CurrTrack +1)
-      kbus.sendcode(music.seekingcode)
       playerstatus := FALSE
 
   3 :        'Previous CD          
-      debug.str(string(" - XMIT: Prev CD",13))
       settrack(CurrCD -1, 1)
-      kbus.sendcode(music.seekingcode)
-'      kbus.sendcode(music.StartPlayCode)
-'      music.startsong
-'      playerstatus := TRUE
-      playerstatus := FALSE                   
+      music.startsong
+      debug.str(string(" - XMIT: Prev CD",13)) 
+      kbus.sendcode(music.StartPlayCode)  
+      playerstatus := TRUE
 
   4 :        'Next CD
-      debug.str(string(" - XMIT: Next CD",13))
       settrack(CurrCD + 1, 1)
-      kbus.sendcode(music.seekingcode)
-'      kbus.sendcode(music.StartPlayCode)
-'      music.startsong
- '     playerstatus := TRUE
-      playerstatus := FALSE
+      music.startsong
+      debug.str(string(" - XMIT: Next CD",13))
+      kbus.sendcode(music.StartPlayCode)
+      playerstatus := TRUE
                    
   5..9 :        'CD 1-5
+      settrack(selectedaction -4, 1)
+      music.startsong
       debug.str(string(" - XMIT: CD"))
       debug.dec(selectedaction - 4)
       debug.newline 
-      settrack(selectedaction -4, 1)
       kbus.sendcode(music.StartPlayCode)
-      music.startsong            
       playerstatus := TRUE
 '                   
 
@@ -1147,8 +1150,13 @@ DAT
 'STEERING WHEEL
         volup        BYTE $50, $04, $68, $32, $11
         voldown      BYTE $50, $04, $68, $32, $10
+
         whlplus      BYTE $50, $04, $68, $3B, $01
+        whlplusup    BYTE $50, $04, $68, $3B, $21       
+
         whlmin       BYTE $50, $04, $68, $3B, $08
+        whlminup     BYTE $50, $04, $68, $3B, $28
+
         RTButton     BYTE $50, $03, $C8, $01, $9A
         Dial         BYTE $50, $04, $C8, $3B, $80 
 
