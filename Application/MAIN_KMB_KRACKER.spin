@@ -12,7 +12,7 @@
 0.55: Major Release                                                                             
 -----                                                                                           
 New:     Debug mode                                                                             
-           Run main modes and tests from the serial terminal by hitting 'd' during bootup       
+           Run main modes and tests from the serial terminal by hitting 'd' during bootup
            Loop tests are available, along with cmd fire tests and bus sniffers                 
            Main modes are much more verbose.  Can be read with 'Kracker Status' tab             
                                                                                                 
@@ -274,8 +274,10 @@ PUB looptimeparse | i
 debug.str(string("Read Time, Parsed",13))
 repeat
   kbus.localtime(@configbuffer)
+  displaybuffer
   debug.str(string("New time",13))
   debug.str(@configbuffer)
+  kbus.sendtext(@configbuffer)
   debug.newline  
   waitcnt(clkfreq + cnt)
    IF debug.rxcheck == "e"
@@ -714,11 +716,14 @@ repeat
               debug.str(string(13,"REC: CD Polled"))
               debug.str(string(" - XMIT: Responded",13))
 
-        $06 : debug.str(string(13,"REC: CD CHG:"))
-             i := kbus.rx
-             debug.dec(i)
-             kbus.rx
-             musiccmd(radioremaps[--i])
+        $06 : i := kbus.rx
+              IF i > 6
+                kbus.rx
+              ELSE 
+               debug.str(string(13,"REC: CD CHG:"))
+               debug.dec(i)
+               kbus.rx
+               musiccmd(radioremaps[--i])
                  
         $08 :  debug.str(string(13,"REC: Random:"))  
                repeat len -3 
@@ -767,7 +772,7 @@ repeat
 
 
 
-Pri musiccmd(selectedaction) 
+Pri musiccmd(selectedaction)    | i , x
 
 case selectedaction
   0 : debug.str(string(" - XMIT: Nothing",13)) 
@@ -815,8 +820,37 @@ case selectedaction
 
   11 :       'Time                 
       debug.str(string(" - XMIT: Time Text",13))
+      kbus.sendcode(@timereq)
       kbus.localtime(@configbuffer)
-      kbus.sendtext(@configbuffer)
+      displaybuffer
+      kbus.sendtext(@configbuffer) 
+
+{      repeat
+        debug.str(string("Buffer CNT"))
+        debug.dec(kbus.rxcount)         
+'        debug.newline
+ '       kbus.bufferpeek(15)
+'          repeat i from 0 to 15
+'           debug.hex(BYTE[kbus.codeptr+i], 2)                              
+'           debug.char(32)                                       
+'          debug.newline
+
+
+        IF kbus.nextcode(50) == TRUE
+          displaybuffer
+
+      repeat
+        if kbus.rxcount > 0 
+          debug.str(string("Buffer CNT"))
+          debug.dec(kbus.rxcount)
+          debug.char(32)
+          debug.str(string(" Contents"))
+          kbus.bufferpeek(15)
+          repeat i from 0 to 15
+           debug.hex(BYTE[kbus.codeptr+i], 2)                              
+           debug.char(32)                                       
+          debug.newline
+}
         
   12 :       'Avg Fuel Consumption 
       debug.str(string(" - XMIT: Fuel Text",13))
@@ -1244,6 +1278,7 @@ DAT
         CDannounce    BYTE $18, $04, $FF, $02, $01
         CDrespond     BYTE $18, $04, $68, $02, $00
 
+      timeReq         BYTE $3B, $05, $80, $41, $01, $01
 
 
 
