@@ -7,6 +7,7 @@
 {-----------------REVISION HISTORY-----------------
   For complete usage and version history, see Release_Notes.txt
 
+0.57: Added Text Display to RAD/NAV 
 0.56: Fixed Wav Playback bug
                                                                                                 
 0.55: Major Release                                                                             
@@ -303,7 +304,7 @@ setLED(0)
 setLED(2)
 waitcnt(clkfreq  / 800 + cnt)
 repeat until debug.rxcheck  == -1
-debug.str(string("Version",13, "0.56", 13))
+debug.str(string("Version",13, "0.57", 13))
 
 repeat
   debug.strin(@configbuffer)
@@ -809,7 +810,6 @@ case selectedaction
       debug.newline 
       kbus.sendcode(music.StartPlayCode)
       playerstatus := TRUE
-'                   
 
   10 :       'Aux In               
       debug.str(string("sent: AuxIn",13))
@@ -818,40 +818,11 @@ case selectedaction
       ELSE
         kbus.sendtext(string("Aux Off"))         
 
-  11 :       'Time                 
+  11 :       'Time normally 11                 
       debug.str(string(" - XMIT: Time Text",13))
-      kbus.sendcode(@timereq)
       kbus.localtime(@configbuffer)
-      displaybuffer
       kbus.sendtext(@configbuffer) 
 
-{      repeat
-        debug.str(string("Buffer CNT"))
-        debug.dec(kbus.rxcount)         
-'        debug.newline
- '       kbus.bufferpeek(15)
-'          repeat i from 0 to 15
-'           debug.hex(BYTE[kbus.codeptr+i], 2)                              
-'           debug.char(32)                                       
-'          debug.newline
-
-
-        IF kbus.nextcode(50) == TRUE
-          displaybuffer
-
-      repeat
-        if kbus.rxcount > 0 
-          debug.str(string("Buffer CNT"))
-          debug.dec(kbus.rxcount)
-          debug.char(32)
-          debug.str(string(" Contents"))
-          kbus.bufferpeek(15)
-          repeat i from 0 to 15
-           debug.hex(BYTE[kbus.codeptr+i], 2)                              
-           debug.char(32)                                       
-          debug.newline
-}
-        
   12 :       'Avg Fuel Consumption 
       debug.str(string(" - XMIT: Fuel Text",13))
       kbus.fuelaverage(@configbuffer)

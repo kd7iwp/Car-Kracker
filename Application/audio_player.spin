@@ -134,7 +134,7 @@ MainLoop
         rdbyte volstk, volptr
 
         rdbyte abortstk, abortptr
-        cmp abortstk, #5 wz
+        cmp abortstk, #6 wz
         IF_Z JMP #Done 
 
 
