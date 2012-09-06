@@ -1,4 +1,9 @@
-RELEASE NOTES V.56
+RELEASE NOTES V.57
+
+0.57: Added Text Display to RAD/NAV
+      Improved EEPROM reading reliability
+ 
+0.56: Fixed Wav Playback bug
                                                                         
 **************************                                                                                           
 New:     Debug mode                                                                             

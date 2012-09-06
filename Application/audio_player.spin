@@ -1,3 +1,14 @@
+''********************************************
+''*  Audio Core 1.0 (w/Kracker 0.57)         *
+''*  Author: Nick McClanahan (c) 2012        *
+''*  See end of file for terms of use.       *
+''********************************************
+{-----------------REVISION HISTORY-----------------
+1.0 - Initial Release
+
+}
+
+
 CON _clkmode = xtal1 + pll16x
     _xinfreq = 5_000_000       '80 MHz
 
@@ -25,7 +36,7 @@ abortptr := @abortplay
 volptr := @vol
 vol := volset
 i:= \sd.mount_explicit(0, 1, 2, 3)
-trackcomplete := TRUE
+trackcomplete := FALSE
 return i
 
 
@@ -121,10 +132,16 @@ setup
         MOV pData,pData1
         MOV nTable,#1
         'setup loop counter
+
+'        mov   fade, fadeperiod
+'Fadein  add frqa, #100
+'        add frqb, #100        
+'        djnz fade, #fadein
+
+
+
         MOV WaitCount, CNT
         ADD WaitCount,dRate
-
-
 MainLoop
         SUB nSamples,#1
         CMP nSamples,#0 wz
@@ -160,6 +177,7 @@ MainLoop
         'switch table       ?
         CMP nTable,#1 wz
         IF_Z JMP #SwitchToTable2
+
 SwitchToTable1
         MOV nTable,#1
         MOV pData,pData1
@@ -168,11 +186,17 @@ SwitchToTable2
         MOV nTable,#2
         MOV pData,pData2
         JMP #MainLoop
-        
+
+
                 
-Done
-         'now stop
-        COGID thisCog
+
+
+'        mov   fade, fadeperiod
+'Fadeout sub frqa, #100
+'        sub frqb, #100        
+'        djnz fade, #fadeout
+
+Done    COGID thisCog
         COGSTOP thisCog          
 
 'Working variables
@@ -192,7 +216,9 @@ SizeBuff long (buffsize-1)
 'Left    long 0
 Right   long 0
 Left    long 0
-Zero    long 0          
+Zero    long 0
+fadeperiod     long 100_000
+fade    long  0         
 
 'setup parameters
 DMaskR  long 0 'right output mask

@@ -1,5 +1,5 @@
 ''********************************************
-''*  Car Kracker Main, V0.56                 *
+''*  Car Kracker Main, V0.57                 *
 ''*  Author: Nick McClanahan (c) 2012        *
 ''*  See end of file for terms of use.       *
 ''********************************************
@@ -7,7 +7,9 @@
 {-----------------REVISION HISTORY-----------------
   For complete usage and version history, see Release_Notes.txt
 
-0.57: Added Text Display to RAD/NAV 
+0.57: Added Text Display to RAD/NAV
+      Improved EEPROM reading reliability
+ 
 0.56: Fixed Wav Playback bug
                                                                                                 
 0.55: Major Release                                                                             
@@ -106,14 +108,13 @@ cogstop(0)
 
 
 PUB main | i, c
+dira[31]~~
+dira[30]~~
 
 i2cObject.Init(29, 28, false)
-'kbus.Start(27, 26, %0110, 9600)
 kbus.Start(27, 26, %0010, 9600)
 debug.StartRxTx(31, 30, %0000, 115200)
-
 setled(1)
-
 debug.str(string("Hit d key for debug",13))
 
 i := cnt
@@ -125,26 +126,32 @@ repeat while cnt < i
      "d": 
         debugmode
 
-  
 setLED(0)          
 
-IF EEPROM_read(112) <> 1
+IF EEPROM_read(112) == 0
+  setLED(0)
   Buttons.start(clkfreq / 25000)                  
   i := cnt + (menudelay)
   repeat while  cnt < i 
     case Buttons.State
       %1000_0000 : COGSTOP(7)
+                   setLED(23)
                    SerialRepeatMODE     'Sniffs bus and repeats over USB
-                   
-      %0001_0000 : COGSTOP(7)
-                   ConnectionTestMODE   'Test connection by blinking Clown Nose
 
       %0100_0000 : COGSTOP(7)  
+                   setLED(22)
                    DiagnosticMODE       'Diagnostic Mode for connecting PC
 
       %0010_0000 : COGSTOP(7)
+                   setLED(21)     
                    MusicMode            'Music Mode, start with a button
 
+      %0001_0000 : COGSTOP(7)
+                   setLED(20)
+                   ConnectionTestMODE   'Test connection by blinking Clown Nose
+
+  COGSTOP(7)
+  setLED(20)
   Musicmode
 
 case EEPROM_read(101)
@@ -153,7 +160,7 @@ case EEPROM_read(101)
   2 : SerialRepeatMode
   3 : RemapperMode
   4 : DataLogMode
-  OTHER : DiagnosticMode
+  OTHER : Musicmode
 
 PUB debugmode
 waitcnt(clkfreq  / 800 + cnt)
@@ -170,54 +177,77 @@ repeat
     5 : loophex
     6 : loopcmd(1)
     7 : loopcmd(0)
-    8 : loopcmd(2)            
-    9 : loopAudio
-    10 : looptimeparse
-    11 : loopRadiotxt
+    8 : loopAudio
+    9 : loopRadiotxt
+    10 : debugkmb
   waitcnt(clkfreq / 2 + cnt)
 
 DAT
-debugmenu     BYTE      "Select Function",13
+debugmenu     BYTE      "DEBUG MENU",13
               BYTE      "Main Modes:",13
-              BYTE      "0:Diagnostic",13
-              BYTE      "1:Music",13
-              BYTE      "2:SerialRepeat",13
-              BYTE      "3:Remapper",13
-              BYTE      "4:DataLog",13
+              BYTE      "  0: Diagnostic",13
+              BYTE      "  1: Music",13
+              BYTE      "  2: SerialRepeat",13
+              BYTE      "  3: Remapper",13
+              BYTE      "  4: DataLog",13
               BYTE      "Test Modes: (e to escape test)",13
-              BYTE      "5:Hex Bus Sniffer",13
-              BYTE      "6:CMD Blast, Bus Watch",13
-              BYTE      "7:CMD Blast, Single",13
-              BYTE      "8:CMD Blast, Repeat",13                            
-              BYTE      "9:Audio Player",13
-              BYTE      "10:Read Time, Parsed",13
-              BYTE      "11:Write text to Radio/NAV",13,0
+              BYTE      "  5: Hex Bus Sniffer",13
+              BYTE      "  6: CMD Blast, Bus Watch",13
+              BYTE      "  7: CMD Blast, Single",13
+              BYTE      "  8: Audio Player",13
+              BYTE      "  9: Write text to Radio/NAV",13
+              BYTE      " 10: Read KMB values",13,0
+
+kmbmenu       BYTE      "Read KMB",13
+              BYTE      "  0: Return to Main Debug",13
+              BYTE      "  1: Read Time, Parsed",13
+              BYTE      "  2: Read Date, Parsed",13
+              BYTE      "  3: Read Fuel, Parsed",13
+              BYTE      "  4: Read Range, Parsed",13,0                            
+
+
+PUB debugkmb  | i
+repeat
+  debug.str(@kmbmenu)
+  i := debug.decin 
+   case i
+        0 : return
+        1 : kbus.localtime(@configbuffer)
+            debug.str(@configbuffer)
+        2 : kbus.date(@configbuffer)
+            debug.str(@configbuffer)
+        3 : kbus.fuelaverage(@configbuffer)
+            debug.str(@configbuffer)
+        4 : kbus.estrange(@configbuffer)
+            debug.str(@configbuffer)
+  waitcnt(clkfreq / 2 + cnt)
+
 
 PUB loopaudio
   debug.str(string("Playing 01_01.wav",13,"Hit e to stop and exit",13))
   debug.str(string("w=CD Up, s=CD Down",13,"d=Track+, a=Track-",13))
 
-if music.start(0) < 0
+if music.start(1) < 0
   debug.str(string("Couldn't mount SD card!!!",13))
   debug.str(string("Rebooting",13))
   repeat 10
     setLED(201)   
     waitcnt(clkfreq / 3 + cnt)
-
+                       
 settrack(1,1)  
 music.startsong 
 repeat
   case debug.rxcheck
     "e" : music.stop
           return
-    "w" : music.stop
-          return
-    "a" : music.stop
-          return
-    "d" : music.stop
-          return
-    "s" : music.stop
-          return                                
+    "w" : settrack(CurrCD +1, 1)
+          music.startsong
+    "a" : settrack(CurrCD -1, 1)
+          music.startsong
+    "d" : settrack(CurrCD, CurrTrack + 1)
+          music.startsong
+    "s" : settrack(CurrCD - 1, 1)
+          music.startsong                     
       
 PUB loopradiotxt
 repeat
@@ -270,40 +300,12 @@ ELSEIF option == 2
     IF debug.rxcheck == "e"
       return  
 
-PUB looptimeparse | i
-'debug.clear          
-debug.str(string("Read Time, Parsed",13))
-repeat
-  kbus.localtime(@configbuffer)
-  displaybuffer
-  debug.str(string("New time",13))
-  debug.str(@configbuffer)
-  kbus.sendtext(@configbuffer)
-  debug.newline  
-  waitcnt(clkfreq + cnt)
-   IF debug.rxcheck == "e"
-     return  
-
-
-PUB loopfuelparse | i
-'debug.clear          
-debug.str(string("Read Fuel, Parsed",13))
-repeat
-  kbus.fuelaverage(@configbuffer)
-  debug.str(string("Fuel",13))
-  debug.str(@configbuffer)
-  debug.newline
-  waitcnt(clkfreq * 2 + cnt)
-   IF debug.rxcheck == "e"
-     return  
-
-
 
 PUB configmode  | controlSelected, eepromoffset
 setLED(0)
 setLED(2)
 waitcnt(clkfreq  / 800 + cnt)
-repeat until debug.rxcheck  == -1
+'repeat until debug.rxcheck  == -1
 debug.str(string("Version",13, "0.57", 13))
 
 repeat
@@ -339,11 +341,11 @@ Pri EEPROM_set(addr,byteval)
 setLED(99)
 waitcnt(cnt + 100_000)
 i2cObject.writeLocation(EEPROM_ADDR, addr+EEPROM_base, byteval, 16, 8)
+waitcnt(cnt + 200_000) 
 
 Pri EEPROM_Read(addr) | eepromdata
 setLED(199)
 eepromdata := 0
-waitcnt(cnt + 100_000)
 eepromdata := i2cObject.readLocation(EEPROM_ADDR, addr+EEPROM_base, 16, 8)
 return eepromdata
 
@@ -380,8 +382,9 @@ csvheader
 Case EEPROM_Read(119)
   0: repeatlimit := 1
   1: repeatlimit := 2
-  2: repeatlimit := 20
-  3: repeatlimit := 240
+  2: repeatlimit := 4
+  3: repeatlimit := 20
+  4: repeatlimit := 240      
 
 
 
@@ -677,37 +680,32 @@ repeat
 
 PUB MUSICMODE     | i, d, volset , len
 debug.str(string("Entering: Music Mode",13))
-
 playerstatus := FALSE
- 
+volset :=  EEPROM_read(byte[@radbutlist][8]) 
+
+
 repeat i from 0 to 7
   radioremaps[i] := EEPROM_read(byte[@radbutlist][i])
-
-volset :=  EEPROM_read(byte[@radbutlist][8])
-debug.str(string("Vol set at:"))
-debug.dec(volset)
-debug.newline
 
 IF EEPROM_read(byte[@radbutlist][9]) == 1
   music.AuxIn
   debug.str(string("Entered AuxIn Only Mode",13))
+  kbus.sendtext(string("Aux On"))     
+
 ELSE
   if music.start(volset) < 0
     debug.str(string("Couldn't mount SD card!!!",13))
-    debug.str(string("Rebooting",13))
-    repeat 10
+    repeat 
       setLED(201)   
-      waitcnt(clkfreq / 3 + cnt)
-    reboot
 
-settrack(2,1)  
+settrack(1,1)  
 
 
 kbus.sendcode(@CDAnnounce)
 debug.str(string("XMIT: CD Announce",13))
 
 repeat
-  IF kbus.rx == $68
+  IF kbus.rxcheck == $68
     len := kbus.rx
     IF kbus.rx == $18
       kbus.rx
@@ -726,10 +724,10 @@ repeat
                kbus.rx
                musiccmd(radioremaps[--i])
                  
-        $08 :  debug.str(string(13,"REC: Random:"))  
-               repeat len -3 
-                kbus.rx
-               musiccmd(radioremaps[5])             
+'        $08 :  debug.str(string(13,"REC: Random:"))  
+'               repeat len -3 
+'                kbus.rx
+'               musiccmd(radioremaps[5])             
 
         $05 :
               If kbus.rx == 1
@@ -764,13 +762,14 @@ repeat
                debug.str(string("REC: Play Start"))
                debug.str(string(" - XMIT: Begin Playing",13))
                music.startsong
-               playerstatus := TRUE                                 
+               playerstatus := 2                                 
 
-                                
-
-'  IF (music.trackcompleted == TRUE) AND (playerstatus == 255)    
-'    musiccmd(2)
-
+'  IF playerstatus := 2
+'    if music.trackcompleted == TRUE
+'      musiccmd(2)
+'      kbus.sendcode(music.PlayingCode)
+'      music.startsong
+'      playerstatus := 2       
 
 
 Pri musiccmd(selectedaction)    | i , x
@@ -793,56 +792,61 @@ case selectedaction
       music.startsong
       debug.str(string(" - XMIT: Prev CD",13)) 
       kbus.sendcode(music.StartPlayCode)  
-      playerstatus := TRUE
+      playerstatus := 2
 
   4 :        'Next CD
       settrack(CurrCD + 1, 1)
       music.startsong
       debug.str(string(" - XMIT: Next CD",13))
       kbus.sendcode(music.StartPlayCode)
-      playerstatus := TRUE
+      playerstatus := 2
                    
-  5..9 :        'CD 1-5
+  5..10 :        'CD 1-6
       settrack(selectedaction -4, 1)
       music.startsong
       debug.str(string(" - XMIT: CD"))
       debug.dec(selectedaction - 4)
       debug.newline 
       kbus.sendcode(music.StartPlayCode)
-      playerstatus := TRUE
+      playerstatus := 2
 
-  10 :       'Aux In               
+  11 :       'Aux In               
       debug.str(string("sent: AuxIn",13))
       IF music.AuxIn
         kbus.sendtext(string("Aux On"))
       ELSE
-        kbus.sendtext(string("Aux Off"))         
+        kbus.sendtext(string("Aux Off"))
 
-  11 :       'Time normally 11                 
+  12 :       'Time normally 12                 
       debug.str(string(" - XMIT: Time Text",13))
       kbus.localtime(@configbuffer)
       kbus.sendtext(@configbuffer) 
 
-  12 :       'Avg Fuel Consumption 
+  13 :       'Avg Fuel Consumption 
       debug.str(string(" - XMIT: Fuel Text",13))
       kbus.fuelaverage(@configbuffer)
+      i := strsize(@configbuffer) 
+      Bytemove(@configbuffer + i, @mpgsuffix, 5)
+      kbus.sendtext(@configbuffer)
  
-  13 :       'Estimated Range      
+  14 :       'Estimated Range      
       debug.str(string(" - XMIT: Range Text",13))
       kbus.estrange(@configbuffer)
+      i := strsize(@configbuffer)  
+      Bytemove(@configbuffer + i , @milessuffix, 7)
       kbus.sendtext(@configbuffer)
 
-  14 :       'Date 
+  15 :       'Date 
       debug.str(string(" - XMIT: Date Text",13))
       kbus.date(@configbuffer)
       kbus.sendtext(@configbuffer)
       
-  15 :       'Kracker Vol + 
+  16 :       'Kracker Vol + 
       debug.str(string("Kracker Vol+",13))
       kbus.sendtext(string("k vol+"))
       music.changevol(-1)
 
-  16 :       'Kracker Vol - 
+  17 :       'Kracker Vol - 
       debug.str(string("Kracker Vol-",13))
       kbus.sendtext(string("k vol-"))
       music.changevol(+1)      
@@ -872,15 +876,10 @@ PUB SERIALREPEATMODE  | i
 debug.str(string("Entering:Repeater Mode",13)) 
 setLED(205) 
 
-
 repeat
   IF kbus.nextcode(100)
-    repeat i from 0 to byte[kbus.codeptr+1] + 1 
-      debug.hex(BYTE[kbus.codeptr + i],2)
-      debug.char(32)
-    debug.newline
-  IF debug.rxcount > 0
-    IF debug.charin == "e"
+    displaybuffer
+  IF debug.charin == "e"
       return  
 
 
@@ -893,7 +892,7 @@ repeat i from 0 to 5
   loggeditems[i] := EEPROM_read(byte[@maplist][i])
 
 repeat
-  kbus.nextcode(0)
+    kbus.nextcode(0)
     setLED(199)  
     repeat y from 0 to 5
       codetosend := 0     
@@ -902,60 +901,63 @@ repeat
       case loggeditems[y]
         1 :IF kbus.codecompare(@RTButton)
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:R/T",13))                                   
+              debug.str(string("Received:R/T "))                                   
 
         2 :IF kbus.codecompare(@dial)
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:Dial",13))
+              debug.str(string("Received:Dial "))
 
         3 :IF kbus.codecompare(@Volup)        
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:Volup",13))
+              debug.str(string("Received:Volup "))
                
         4 :IF kbus.codecompare(@VolDown)      
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:Voldown",13))
+              debug.str(string("Received:Voldown "))
                 
         5 :IF kbus.codecompare(@whlPlus)      
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:WhlPlus",13))
+              debug.str(string("Received:WhlPlus "))
                 
         6 :IF kbus.codecompare(@Whlmin)       
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:WhlMin",13))
+              debug.str(string("Received:WhlMin "))
                 
         7 :IF kbus.codecompare(@CDbutton1)    
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:CD1",13))
+              debug.str(string("Received:CD1 "))
                 
         8 :IF kbus.codecompare(@CDbutton2)    
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:CD2",13))
+              debug.str(string("Received:CD2 "))
                 
         9 :IF kbus.codecompare(@CDbutton3)    
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:CD3",13))
+              debug.str(string("Received:CD3 "))
                 
         10:IF kbus.codecompare(@CDbutton4)    
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:CD4",13))
+              debug.str(string("Received:CD4 "))
                 
         11:IF kbus.codecompare(@CDbutton5)    
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:CD5",13))
-                
-        12:IF kbus.codecompare(@Remotelock)   
+              debug.str(string("Received:CD5 "))
+
+        12:IF kbus.codecompare(@CDbutton5)    
               codetosend :=  EEPROM_read(xmit)
-              debug.str(string("Received:RemoteLock",13))
+              debug.str(string("Received:CD6 "))
+                
+        13:IF kbus.codecompare(@Remotelock)   
+              codetosend :=  EEPROM_read(xmit)
+              debug.str(string("Received:RemoteLock "))
               
-        13:IF kbus.codecompare(@remotehome)   
+        14:IF kbus.codecompare(@remotehome)   
               codetosend :=  EEPROM_read(xmit)  
-              debug.str(string("Received:RemoteOpen",13))
+              debug.str(string("Received:RemoteOpen "))
 
       IF (codetosend > 0) AND (codetosend < 24)
         setled(100)        
 
-      
       case codetosend                                                                          
          1: kbus.sendcode(@TrunkOpen)
               debug.str(string("Sent:TrunkOpen",13))
@@ -1209,6 +1211,7 @@ DAT
         CDButton3    BYTE $68, $05, $18, $38, $06, $03
         CDButton4    BYTE $68, $05, $18, $38, $06, $04
         CDButton5    BYTE $68, $05, $18, $38, $06, $05
+        CDButton6    BYTE $68, $05, $18, $38, $06, $06        
         chgtrackDown BYTE $68, $05, $18, $38, $05, $01
         chgtrackUp   BYTE $68, $05, $18, $38, $05, $00
 
@@ -1265,7 +1268,7 @@ sersend       Byte "sersend",0
 serdone       Byte "serdone",0
 modesel       BYTE "m",0
 'datalog mode   
-logfilesuffix BYTE ".txt",0
+logfilesuffix BYTE ".csv",0
 
 
 
@@ -1295,7 +1298,11 @@ xmitlist      BYTE 103,104,106,113,115,117
 
 'radio button remap fields
 radbutlist    BYTE 134,135,136,137,138,139,140,141, 142, 143
-'                  CD1             CD5 Ran T-  T+   vol  Aux
+'                  CD1                 CD6 T-  T+   vol  Aux
+
+mpgsuffix     BYTE " mpg",0
+milessuffix   BYTE " Miles",0
+
 
 'Config remap for bluetooth
 btmaplist     BYTE 121,123,125,127,133,131,129
