@@ -1,10 +1,33 @@
-RELEASE NOTES V.57
+RELEASE NOTES V.58
+0.58  Added WAV Riff tag support
+**************************                                                                                           
+New:     Audio metadata                                                                             
+**************************
+WAV files can now contain tags, and tag display can be mapped to radio buttons using the kustomizer.  Tags available;
+INAM - Song name 
+IART - Artist 
+IPRD - Album 
+IGNR - Genre
+Not all applications support all wav tags.
 
+New:	'Reset All' configuration settings button in Kustomizer
+New:	All modes are dramatically more verbose, data appears in serial terminal	
+
+Fixed: 	Error notification on SD cards
+Fixed: 	Removed bus commands that haven't been verified
+Fixed: 	Button reader now stops when no button is pushed
+Fixed: 	CD # changed to Binary unsigned from BCD
+Fixed: 	diagnostics mode initialization bug  		
+
+Previous Releases
+-----
 0.57: Added Text Display to RAD/NAV
       Improved EEPROM reading reliability
  
 0.56: Fixed Wav Playback bug
-                                                                        
+
+
+0.55: Major Release                                                                        
 **************************                                                                                           
 New:     Debug mode                                                                             
 **************************
@@ -96,10 +119,8 @@ Fixed:   Better reply to Radio Poll for fewer connection drops
                                                                                        
 Removed: Nothing
 
-Previous Releases
------
+
 0.54:   More data available for logging
 0.53:   Added Datalog mode, Bus Monitor Mode
         Version check / report
 0.51:   Preferences are now stored on EEPROM for reboots, they can be changed through a serial connection
-}
