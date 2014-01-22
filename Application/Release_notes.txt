@@ -1,4 +1,10 @@
-RELEASE NOTES V.58
+RELEASE NOTES V.59
+New:	Strings are now stored in upper EEPROM.  Kustomizer .59 will populate the strings, or use string_updater
+New:	New Time engine 
+Fixed:  Bugfixes on KbusCore, Padding now works, RX/TX pingpong now switches correctly
+
+Previous Releases
+-----
 0.58  Added WAV Riff tag support
 **************************                                                                                           
 New:     Audio metadata                                                                             
@@ -19,8 +25,6 @@ Fixed: 	Button reader now stops when no button is pushed
 Fixed: 	CD # changed to Binary unsigned from BCD
 Fixed: 	diagnostics mode initialization bug  		
 
-Previous Releases
------
 0.57: Added Text Display to RAD/NAV
       Improved EEPROM reading reliability
  

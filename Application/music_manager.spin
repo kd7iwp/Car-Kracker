@@ -1,9 +1,11 @@
 ''********************************************
-''*  Music Manager 1.1                       *
+''*  Music Manager 1.2                       *
 ''*  Author: Nick McClanahan (c) 2012        *
 ''*  See end of file for terms of use.       *
 ''********************************************
 {-----------------REVISION HISTORY-----------------
+1.2 - Fixed Next / Previous track bug
+
 1.1 - RIFF support
 Audio_Player now supports RIFF (Audio file metadata).  
 
@@ -28,6 +30,7 @@ WORD CurrCD, CurrTrack
 WORD CurrArtist, CurrSong, CurrAlbum, CurrGenre
 
 LONG stack[90]
+
 BYTE Aux
 LONG filestate
 LONG playerstate
@@ -41,6 +44,7 @@ currartist := player.getArtist
 currsong   := player.getSong
 curralbum  := player.getAlbum
 currgenre  := player.getgenre
+
 
 Aux := FALSE
 playermode  := FALSE
@@ -57,6 +61,10 @@ PUB playtrack(CD,track) | tens, i, CDHex, TrackHex, newCD, newTrack
 {{Stops the current track, if playing, and plays the requested track, if it can be found
   Call with "c", "n", or "p" for keeping the (c)urrent CD/Track value, (n)ext, or (p)revious 
   Return of TRUE means a problem was encountered}}
+track #>= 1
+CD    #>= 1
+
+
 
 playermode := TRUE
 player.endtrack
@@ -71,66 +79,89 @@ CASE CD
     "n" : CD := currCD + 1
     "p" : CD := currCD - 1  #> 1
 
-IF Aux == FALSE
-  newfilename(CD,track)
-  IFNOT player.FileNotFound(@playfile)
-    filenameptr := @playfile 
-    startplaying
-    return 0
-  IFNOT player.FileNotFound(@altfile)
-    filenameptr := @altfile 
-    startplaying
-    return 0
-    
-    
-  ELSE    
-    repeat 2                      'First attempt the next 2 tracks
-      newfilename(CD,++track)
-      IFNOT player.filenotfound(@playfile)
-        filenameptr := @playfile 
-        startplaying
-        return 0
-      IFnot player.filenotfound(@altfile)
-        filenameptr := @altfile
-        startplaying
-        return 0
+IF AUX
+  return TRUE
 
-    repeat 2                      'Then attempt the next 2 CD's 
-      newfilename(++CD, 1)  
-      IFNOT player.filenotfound(@playfile)
-        filenameptr := @playfile 
-        startplaying
-        return 0
-      ifnot player.filenotfound(@altfile)
-        filenameptr := @altfile
-        startplaying
-        return 0
 
-    newfilename(1,1)              'Then attempt Track 1, CD 1
-      IFNOT player.filenotfound(@playfile)
-        filenameptr := @playfile 
-        startplaying
-        return 0
-      ifnot player.filenotfound(@altfile)
-        filenameptr := @altfile
-        startplaying
-        return 0
 
-    return -1
-    playermode := FALSE
+newfilename(CD,track)
+IFNOT player.FileNotFound(@playfile)
+  filenameptr := @playfile 
+  startplaying
+  return -2
+IFNOT player.FileNotFound(@playfile2)
+  filenameptr := @playfile2 
+  startplaying
+  return -2
+IFNOT player.FileNotFound(@altfile)
+  filenameptr := @altfile 
+  startplaying
+  return -3
+
+ELSE
+  repeat 2                      'First attempt the next 2 tracks
+    newfilename(CD,++track)
+    IFNOT player.filenotfound(@playfile)
+      filenameptr := @playfile 
+      startplaying
+      return -3
+    IFNOT player.filenotfound(@playfile2)
+      filenameptr := @playfile2 
+      startplaying
+      return -3 
+    IFnot player.filenotfound(@altfile)
+      filenameptr := @altfile
+      startplaying
+      return -4 
+   
+  repeat 2                      'Then attempt the next 2 CD's 
+    newfilename(++CD, 1)  
+    IFNOT player.filenotfound(@playfile)
+      filenameptr := @playfile 
+      startplaying
+      return -5
+    IFNOT player.filenotfound(@playfile2)
+      filenameptr := @playfile2 
+      startplaying
+      return -5 
+    ifnot player.filenotfound(@altfile)
+      filenameptr := @altfile
+      startplaying
+      return -6
+   
+  newfilename(1,1)              'Then attempt Track 1, CD 1
+    IFNOT player.filenotfound(@playfile)
+      filenameptr := @playfile 
+      startplaying
+      return -7
+    IFNOT player.filenotfound(@playfile2)
+      filenameptr := @playfile2 
+      startplaying
+      return -7
+    ifnot player.filenotfound(@altfile)
+      filenameptr := @altfile
+      startplaying
+      return -8
+   
+  playermode := FALSE     
+  return 0
+   
 
 PUB changevol(newval)
 CASE newval
- "p" : newval := --volumeset
- "m" : newval := ++volumeset 
-volumeset := (newval #> 0) <# 6
+ "p"   : --volumeset
+ "m"   : ++volumeset 
+ other : volumeset := newval
+
+volumeset #>= 0
+volumeset <#= 6
+
 player.changevol(volumeset)
 
 return TRUE
 
 PUB stopplaying  
 player.endtrack 
-
 playermode := FALSE
 
 
@@ -191,7 +222,11 @@ PRI startplaying
 IF Aux == FALSE
   waitcnt(clkfreq / 30 + cnt)  
   coginit(AudioBufferCog, bgplay, @stack)        
-  waitcnt(clkfreq / 30 + cnt) 
+  waitcnt(clkfreq / 30 + cnt)
+  Return TRUE
+ELSE
+  return TRUE
+   
   
 PRI bgplay
 playerstate := TRUE
@@ -206,8 +241,10 @@ z := 0
     repeat while CD > 9
       tens++
       CD -= 10
-    byte[@playfile]   := $30 + tens 
-    byte[@playfile+1] := $30 + cd      
+    byte[@playfile]   := $30 + tens
+    byte[@playfile2]   := $30 + tens   
+    byte[@playfile+1] := $30 + cd
+    byte[@playfile2+1] := $30 + cd      
     if tens >0 
       byte[@altfile][z++] := byte[@playfile]
     byte[@altfile][z++] :=   byte[@playfile+1]  
@@ -223,6 +260,9 @@ byte[@altfile][z++] := "_"
     track -= 10
   byte[@playfile+3]   := $30 + tens 
   byte[@playfile+4]   := $30 + track
+  byte[@playfile2+3]   := $30 + tens 
+  byte[@playfile2+4]   := $30 + track
+
   if tens >0 
       byte[@altfile][z++] := byte[@playfile+3]
   byte[@altfile][z++] :=   byte[@playfile+4] 
@@ -241,9 +281,6 @@ BusCodeUpdate(10, trackBCD)
 PUB BusCodeUpdate(idx, newval)
 {{Update Buss codes with new track numbers.  index 9 = CD and index 10 = track}}
 
-
-
-
 IF newval
   byte[@CDnotplay+idx]   := newval
   byte[@CDplaying+idx]   := newval
@@ -254,6 +291,7 @@ IF newval
 DAT
 
 playfile      BYTE "00_00.wav",0
+playfile2     BYTE "00-00.wav",0  
 altfile       BYTE  0,0,0,0,0,0,0,0,0,0,0
  
 

@@ -1,11 +1,14 @@
 ''********************************************
-''*  Audio Core 1.0 (w/Kracker 0.57)         *
+''*  Audio Core 1.2                          *
 ''*  Author: Nick McClanahan (c) 2012        *
 ''*  See end of file for terms of use.       *
 ''********************************************
 {-----------------REVISION HISTORY-----------------
+1.2 - Fixed audio playback bugs - L channel was being played on both L and R
+
 1.1 - RIFF Support
-Now supports audio metadata in WAV files.  
+Now supports audio metadata in WAV files.
+Now supports SPDIF output (pin 14)
 
 1.0 - Initial Release
 }
@@ -54,6 +57,7 @@ else
   DSPset := FALSE
 
 return \sd.mount_explicit(0, 1, 2, 3)
+
   
 
 PUB play(fileptr) | i
@@ -145,7 +149,10 @@ return @plAlbum
 PUB getGenre
 return @plGenre
 PUB changevol(newval) | i
-vol := (newval #> 0) <# 6
+
+newval #>= 0
+newval <#= 6
+vol := newval
 
 PUB FileNotFound(fileptr)
 result := sd.popen(fileptr, "r")
@@ -199,17 +206,23 @@ ASMWAV
 
 setup
         'setup output pins
-        MOV DMaskR,#1
-        ROL DMaskR,OPinR
-        OR DIRA, DMaskR
-        MOV DMaskL,#1
-        ROL DMaskL,OPinL
-        OR DIRA, DMaskL
-        'setup counters
-        OR CountModeR,OPinR
-        MOV CTRA,CountModeR
-        OR CountModeL,OPinL
-        MOV CTRB,CountModeL
+        MOV DIRA, DMask
+        MOVS ctra, #5   'Set A PIN
+        nop
+        MOVD ctra, #7   'Set B PIN
+        nop
+        MOVI ctra, ctrmode 
+        nop
+
+        MOVS ctrb, #4    'Set A PIN  
+        nop
+        MOVD ctrb, #6    'Set B pin
+        nop
+        MOVI ctrb, ctrmode
+
+
+                
+
         'Wait for SPIN to fill table
         MOV WaitCount, CNT
         ADD WaitCount,BigWait
@@ -250,9 +263,9 @@ MainLoop
         
 
         waitcnt WaitCount,dRate    
-        MOV FRQA,Right
-        MOV FRQB,Right
-
+        MOV FRQB,right
+        MOV FRQA,left
+        
         WRLONG Zero,pData
         ADD pData,#4
 
@@ -295,20 +308,20 @@ WaitCount long 0
 pData   long 0
 LoopCount long 0
 SizeBuff long buffsize
-'Left    long 0
+
 Right   long 0
 Left    long 0
 Zero    long 0
-fadeperiod     long 100_000
-fade    long  0         
+
+DMask   LONG %0000_0000_0000_0000_0000_0000_1111_0000
+'                     8        16        24        32'
 
 'setup parameters
-DMaskR  long 0 'right output mask
-OPinR   long 5 'right channel output pin #                        '   <---------  Change Right pin# here !!!!!!!!!!!!!!    
-DMaskL  long 0 'left output mask 
-OPinL   long 4 'left channel output pin #                         '   <---------  Change Left pin# here !!!!!!!!!!!!!!    
-CountModeR long %00011000_00000000_00000000_00000000
-CountModeL long %00011000_00000000_00000000_00000000
+
+'            31  ctr  pll       
+CTRmode LONG %0_00111_000 'differential
+'CTRmode LONG %0_00110_000 '  Original
+
 
 
 'input parameters
